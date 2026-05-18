@@ -4,6 +4,7 @@ import logging
 from datetime import datetime, time, timedelta
 import pytz
 from dotenv import load_dotenv
+import json
 
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters, ContextTypes
@@ -37,7 +38,15 @@ scope = [
 ]
 
 try:
-    creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+    google_creds_json = os.getenv("GOOGLE_CREDENTIALS")
+
+    creds_dict = json.loads(google_creds_json)
+
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(
+        creds_dict,
+        scope
+    )
+
     client = gspread.authorize(creds)
     sheet = client.open(SPREADSHEET_NAME).sheet1
     logger.info("✅ Berhasil konek ke Google Sheets")
