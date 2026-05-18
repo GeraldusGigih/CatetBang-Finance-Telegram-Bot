@@ -217,7 +217,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Google Sheets belum terhubung. Cek log server.")
             return
 
-        total, err = await _compute_total(period) if False else _compute_total(period)
+        total, err = await _compute_total(period)
         if err:
             await update.message.reply_text("❌ Gagal ambil data dari Sheets. Cek log di server.")
             return
