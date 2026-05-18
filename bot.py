@@ -138,6 +138,103 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     await update.message.chat.send_action(action="typing")
     
+    # Jika user nanya total pengeluaran
+    def _detect_period(text: str) -> str | None:
+        t = text.lower()
+        if re.search(r"\bhari ini\b|\bhari\b", t):
+            return "today"
+        if re.search(r"\bminggu ini\b|\bminggu\b", t):
+            return "week"
+        if re.search(r"\bbulan ini\b|\bbulan\b", t):
+            return "month"
+        return None
+
+    def _is_total_query(text: str) -> tuple[bool, str | None]:
+        t = text.lower()
+        # kata kunci sederhana untuk deteksi intent total/rekap
+        if any(k in t for k in ("total", "berapa", "rekap", "udah berapa", "udah berapa?", "sudah berapa")):
+            period = _detect_period(text)
+            # default ke bulan ini kalau nggak jelas
+            return True, (period or "month")
+        return False, None
+
+    async def _compute_total(period: str) -> tuple[int | None, str | None]:
+        try:
+            records = sheet.get_all_values()
+        except Exception as e:
+            logger.error(f"Sheet read error: {e}")
+            return None, "sheet_error"
+
+        tz = pytz.timezone('Asia/Jakarta')
+        now = datetime.now(tz)
+        total = 0
+
+        for row in records[1:]:
+            if len(row) < 6:
+                continue
+            total_str = row[4]
+            tanggal_str = row[5]
+
+            try:
+                dt = datetime.strptime(tanggal_str, "%Y-%m-%d %H:%M:%S")
+            except Exception:
+                # kalau format beda, coba parse cukup bagian tanggal yyyy-mm-dd
+                try:
+                    dt = datetime.fromisoformat(tanggal_str)
+                except Exception:
+                    continue
+
+            # pastikan timezone
+            if dt.tzinfo is None:
+                dt = tz.localize(dt)
+            else:
+                dt = dt.astimezone(tz)
+
+            include = False
+            if period == "today":
+                include = dt.date() == now.date()
+            elif period == "week":
+                start_week = (now - timedelta(days=now.weekday())).date()
+                include = start_week <= dt.date() <= now.date()
+            elif period == "month":
+                include = dt.year == now.year and dt.month == now.month
+            elif period == "all":
+                include = True
+
+            if include:
+                try:
+                    n = int(re.sub(r"[^0-9]", "", str(total_str)))
+                    total += n
+                except Exception:
+                    continue
+
+        return total, None
+
+    is_total, period = _is_total_query(text)
+    if is_total:
+        # cek koneksi sheet
+        if 'sheet' not in globals() or sheet is None:
+            await update.message.reply_text("❌ Google Sheets belum terhubung. Cek log server.")
+            return
+
+        total, err = await _compute_total(period) if False else _compute_total(period)
+        if err:
+            await update.message.reply_text("❌ Gagal ambil data dari Sheets. Cek log di server.")
+            return
+
+        label = ""
+        if period == "today":
+            label = "hari ini"
+        elif period == "week":
+            label = "minggu ini"
+        elif period == "month":
+            label = "bulan ini"
+        else:
+            label = "seluruh waktu"
+
+        await update.message.reply_text(f"📊 *Total pengeluaran {label}:* Rp{total:,}", parse_mode='Markdown')
+        return
+    
     hasil = parse_expense(text)
     
     if not hasil:
